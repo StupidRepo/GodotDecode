@@ -20,9 +20,9 @@ public static class Utils
         
         switch (pckFormatVersion)
         {
-            case <= 1:
+            case 1:
                 return pckFormatVersion;
-            case 2:
+            case 2 or 3:
                 var packFlags = reader.ReadUInt32();
                 if ((packFlags & 1) != 0) // PACK_DIR_ENCRYPTED
                     throw new Exception("Encrypted directory not supported.");

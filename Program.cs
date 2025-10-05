@@ -44,7 +44,7 @@ internal static class Program
             reader.BaseStream.Seek(-offset - 8, SeekOrigin.Current);
             Utils.CheckMagic(reader.ReadInt32());
         }
-            
+        
         var pckFormatVersion = Utils.CheckPckFormatVersion(reader);
             
         var fileIndex = Functions.MakeFileIndex(reader, pckFormatVersion);

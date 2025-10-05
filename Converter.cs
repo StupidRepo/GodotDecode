@@ -140,7 +140,9 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 {
                     WavFormat.EightBits => 1,
                     WavFormat.SixteenBits => 2,
-                    _ => 4 // 4 for IMA_ADPCM and QuiteOKAudio
+                    WavFormat.IMA_ADPCM => 4,
+                    WavFormat.QuiteOKAudio => 2, // QOA uses int16 samples
+                    _ => throw new Exception($"Unknown WAV format: {formatCode}")
                 };
                 
                 entry.ChangeExtension(".sample", ".wav");
@@ -210,7 +212,7 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
     {
         var magic = reader.ReadInt32();
         if (magic == Consts.MagicRscc)
-            throw new Exception($"Compressed resources are currently not supported. Cannot extract '{entry.Path}'.");
+            throw new Exception($"Compressed resources aren't not supported. Cannot convert '{entry.Path}'.");
         if (magic != Consts.MagicRsrc)
             throw new Exception($"Invalid resource magic for '{entry.Path}'.");
 
@@ -224,9 +226,12 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
 
         var resourceType = Utils.Read32BitPrefixedString(reader);
         Console.WriteLine($"Resource type: {resourceType}, engine v{versionMajor}.{versionMinor} (resource v{resourceVersion})");
-        if(resourceVersion != 3) // we only support 3 (Godot 3.6)
-            throw new Exception($"Resource version {resourceVersion} is not supported. Cannot extract '{entry.Path}'.");
-        
+        if (resourceVersion != 3) // we only support 3 (Godot 3.6)
+        {
+            Console.WriteLine($"Resource version {resourceVersion} is not supported.");
+            return null;
+        }
+
         // skip:
         // - importmd_ofs (8 bytes)
         // - reserved (14 x Int32)
@@ -240,14 +245,14 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
         
         var externalResourceCount = reader.ReadInt32();
         for (var i = 0; i < externalResourceCount; i++) {
-            var type = Utils.Read32BitPrefixedString(reader);
-            var path = Utils.Read32BitPrefixedString(reader);
+            Utils.Read32BitPrefixedString(reader); // type
+            Utils.Read32BitPrefixedString(reader); // path
         }
         
         var internalResourceCount = reader.ReadInt32();
         var internalResourceOffsets = new long[internalResourceCount];
         for (var i = 0; i < internalResourceCount; i++) {
-            var path = Utils.Read32BitPrefixedString(reader);
+            Utils.Read32BitPrefixedString(reader); // path
             internalResourceOffsets[i] = reader.ReadInt64();
             // Console.WriteLine($"Internal resource '{path}' at {internalResourceOffsets[i]}");
         }

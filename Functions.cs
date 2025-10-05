@@ -5,40 +5,51 @@ namespace GodotDecode;
 
 public static class Functions
 {
-    public static List<FileIndex> MakeFileIndex(BinaryReader reader, int pckFormatVersion)
-    {
-        long fileBaseOffset = 0;
-        if (pckFormatVersion >= 2) fileBaseOffset = reader.ReadInt64();
-            
-        // Skip reserved bytes (16 x Int32)
-        reader.BaseStream.Seek(16 * 4, SeekOrigin.Current);
-            
-        var fileCount = reader.ReadInt32();
-        Console.WriteLine($"Found {fileCount} files.");
-        
-        var fileIndex = new List<FileIndex>();
-        for (var i = 0; i < fileCount; i++)
+	public static List<FileIndex> MakeFileIndex(BinaryReader reader, int pckFormatVersion)
+	{
+		long fileBaseOffset = 0;
+		long directoryOffset = 0;
+    
+		if (pckFormatVersion >= 2) fileBaseOffset = reader.ReadInt64();
+		if (pckFormatVersion >= 3) directoryOffset = reader.ReadInt64();
+
+		reader.BaseStream.Seek(16 * 4, SeekOrigin.Current); // skip reserved
+
+		// in v3, the file table (and count) is after the file data.
+		// seek there, so we can read the file list.
+		if (pckFormatVersion >= 3)
+			reader.BaseStream.Seek(directoryOffset, SeekOrigin.Begin);
+
+		var fileCount = reader.ReadInt32();
+		Console.WriteLine($"Found {fileCount} files.");
+
+		var fileIndex = new List<FileIndex>();
+		for (var i = 0; i < fileCount; i++)
 		{
 			fileIndex.Add(new FileIndex(
-				Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32()))
-					.TrimEnd('\0'), 
-				reader.ReadInt64() + fileBaseOffset, reader.ReadInt64(), 
+				Encoding.UTF8.GetString(reader.ReadBytes(reader.ReadInt32())).TrimEnd('\0'),
+				reader.ReadInt64() + fileBaseOffset, reader.ReadInt64(),
 				reader.ReadBytes(16)
 			));
-			
+
 			if (pckFormatVersion < 2) continue;
 			var encryptedBool = reader.ReadUInt32();
 			if ((encryptedBool & 1) != 0)
 				throw new Exception("Encrypted files not supported.");
 		}
-        
-        if(fileIndex.Count < 1)
+
+		if(fileIndex.Count < 1)
 			throw new Exception("No files were found inside the archive.");
-        
-        fileIndex.Sort((a, b) => (int)(a.Offset - b.Offset));
+
+		fileIndex.Sort((a, b) => (int)(a.Offset - b.Offset));
+		
+		// and once we're done, seek back to file data ;)
+		if (pckFormatVersion >= 3)
+			reader.BaseStream.Seek(fileBaseOffset, SeekOrigin.Begin);
 		return fileIndex;
-    }
-    public static void ExtractFiles(BinaryReader reader, List<FileIndex> fileIndex, string outputDir, bool convert, bool verify)
+	}
+	
+	public static void ExtractFiles(BinaryReader reader, List<FileIndex> fileIndex, string outputDir, bool convert, bool verify)
 	{
 		Directory.CreateDirectory(outputDir);
 
