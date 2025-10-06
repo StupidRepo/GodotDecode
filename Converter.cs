@@ -200,7 +200,7 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
         CompressedTexture, // https://github.com/godotengine/godot/blob/4.2/scene/resources/compressed_texture.cpp#L299
         StreamTexture, // https://github.com/godotengine/godot/blob/3.5/scene/resources/texture.cpp#L464
         
-        Ogg, // TODO: fix pls bc idk what version this is from https://github.com/godotengine/godot/blob/[FIXME]/core/io/resource_format_binary.cpp#L836
+        Ogg, // https://github.com/godotengine/godot/blob/3.0/core/io/resource_format_binary.cpp#L836
         Wav, // https://github.com/godotengine/godot/blob/3.5/scene/resources/audio_stream_sample.cpp#L552
     }
     
