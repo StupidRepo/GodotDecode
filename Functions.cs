@@ -15,8 +15,8 @@ public static class Functions
 
 		reader.BaseStream.Seek(16 * 4, SeekOrigin.Current); // skip reserved
 
-		// in v3, the file table (and count) is after the file data.
-		// seek there, so we can read the file list.
+		// in v3+, the file table (with the count) is after the file data.
+		// so we seek there, to read the file list...
 		if (pckFormatVersion >= 3)
 			reader.BaseStream.Seek(directoryOffset, SeekOrigin.Begin);
 
@@ -43,7 +43,7 @@ public static class Functions
 
 		fileIndex.Sort((a, b) => (int)(a.Offset - b.Offset));
 		
-		// and once we're done, seek back to file data ;)
+		// ...and once we're done with that, seek back to file data ;)
 		if (pckFormatVersion >= 3)
 			reader.BaseStream.Seek(fileBaseOffset, SeekOrigin.Begin);
 		return fileIndex;
@@ -62,10 +62,7 @@ public static class Functions
                 continue;
             }
 
-            if (convert)
-            {
-	            if (new Converter(reader, entry, outputDir, verify).Convert()) continue;
-            }
+            if (convert) if (new Converter(reader, entry, outputDir, verify).Convert()) continue; // if converter handled the file stuff, skip to next entry
             
             reader.BaseStream.Seek(entry.Offset, SeekOrigin.Begin);
             var fileData = reader.ReadBytes((int)entry.Size);

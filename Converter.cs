@@ -1,6 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
-
 namespace GodotDecode;
 
 public class Converter(BinaryReader reader, Functions.FileIndex entry, string outputDir, bool verify)
@@ -47,30 +44,47 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 
                 // now start from https://github.com/godotengine/godot/blob/4.2/scene/resources/compressed_texture.cpp#L299
                 var format = (TextureFormat) reader.ReadInt32();
+                
                 // skip:
                 // - width (2 bytes)
                 // - height (2 bytes)
-                // - mipmaps (4 byte)
-                // - other format data (4 bytes)
-                // - for some reason, another 4 bytes
-                reader.BaseStream.Seek(16, SeekOrigin.Current);
+                reader.BaseStream.Seek(4, SeekOrigin.Current);
+                
+                var mipmaps = Math.Max(1, reader.ReadInt32());
+                reader.BaseStream.Seek(4, SeekOrigin.Current); // skip some kind of format thing
+                
+                if(format is TextureFormat.Png or TextureFormat.WebP)
+                {
+                    Console.WriteLine($"Found {mipmaps} mipmaps in '{entry.Path}'.");
+                    
+                    for (var i = 0; i < mipmaps; i++)
+                    {
+                        var mipmapSize = reader.ReadInt32();
+                        var mipmapData = reader.ReadBytes(mipmapSize);
+                        Console.WriteLine($" Mipmap {i+1}: {mipmapSize} bytes");
+                        
+                        using var mipmapFile = File.Create(Path.Combine(outputDir,
+                            $"{entry.Path.TrimStart('/')}._mipmap_{i+1}{(format == TextureFormat.Png ? ".png" : ".webp")}"));
+                        mipmapFile.Write(mipmapData, 0, mipmapSize);
+                    }
+                }
 
                 switch (format)
                 {
                     case TextureFormat.Png:
-                        entry.ChangeExtension(".ctex", ".png");
-                        break;
                     case TextureFormat.WebP:
-                        entry.ChangeExtension(".ctex", ".webp");
-                        break;
-                    
+                        return true;
+                    case TextureFormat.BasisUniversal: // seems to be ktx 2.0, so we will convert to png
+                    {
+                        // TODO: ktx 2.0 basis universal to png conversion
+                        return true;
+                    }
+
+                    case TextureFormat.Image:
                     default:
-                        Console.WriteLine($"I can't convert the CompressedTexture '{entry.Path}' because it uses a format that is not supported by this tool ('{format}'). It will be saved as-is.");
-                        break;
+                        Console.WriteLine($"I can't convert the CompressedTexture '{entry.Path}' because it uses a format that is not supported by this tool ('{format}').");
+                        return true;
                 }
-                
-                entry.Shrink(56); // 36 skipped bytes + format int + the 16 bytes we skipped after that
-                break;
             }
             case SourceFormat.StreamTexture:
             {
@@ -131,7 +145,7 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 var dataLength = (int) data.Length;
                 
                 var formatCode = (WavFormat) props["format"];
-                if(formatCode is WavFormat.QuiteOKAudio or WavFormat.IMA_ADPCM)
+                if(formatCode is WavFormat.QuiteOkAudio or WavFormat.IMA_AdPCM)
                     Console.WriteLine($"WARNING: '{entry.Path}' uses a WAV format ({formatCode}) that is not supported by this tool. The output file may not be playable.");
                 
                 var channels = stereo ?? false ? 2 : 1;
@@ -140,8 +154,8 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 {
                     WavFormat.EightBits => 1,
                     WavFormat.SixteenBits => 2,
-                    WavFormat.IMA_ADPCM => 4,
-                    WavFormat.QuiteOKAudio => 2, // QOA uses int16 samples
+                    WavFormat.IMA_AdPCM => 4,
+                    WavFormat.QuiteOkAudio => 2, // QOA uses int16 samples
                     _ => throw new Exception($"Unknown WAV format: {formatCode}")
                 };
                 
@@ -195,15 +209,16 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
         Image,
         Png,
         WebP,
-        BasisUniversal,
+        BasisUniversal, // this seems to be KTX 2.0 which i, luckily, have experience with...
+                        // okay i kid you not i swear i remember doing stuff with ktx 2.0
     };
     
     // https://github.com/godotengine/godot/blob/master/scene/resources/audio_stream_wav.h#L100
     private enum WavFormat {
         EightBits,
         SixteenBits,
-        IMA_ADPCM,
-        QuiteOKAudio,
+        IMA_AdPCM,
+        QuiteOkAudio, // no, it is quite not okay. >:(
     };
     
     #region Resources

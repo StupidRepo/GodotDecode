@@ -6,7 +6,10 @@ A C# tool which extracts files from Godot Engine resource packs (`.pck` files).
 ## Features
 - Extracts all files from a `.pck` file.
 - Optionally converts Godot-specific file formats to more common formats:
-  - [x] Textures (`.ctex`, `.stex`) → `.png`
+  - [x] Textures (`.ctex`, `.stex`) → `.png` or `.webp` (depending on the original format)
+    - Proper mipmap support too, if present in the file.
+    - **KTX 2.0 support is not implemented yet. Files with this format will be discarded.**
+      - _(Also there is some kind of weird bug where KTX 2.0 files will have like 8 bytes at the start for no reason?)_
   - [x] Audio (`.oggstr`, `.sample`) → `.ogg`, `.wav` (respectively)
     - `.wav` support:
       - [x] PCM8
