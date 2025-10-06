@@ -62,9 +62,12 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                         var mipmapSize = reader.ReadInt32();
                         var mipmapData = reader.ReadBytes(mipmapSize);
                         Console.WriteLine($" Mipmap {i+1}: {mipmapSize} bytes");
+
+                        var outputPath = Path.Combine(outputDir,
+                            $"{entry.Path.TrimStart('/')}._mipmap_{i + 1}{(format == TextureFormat.Png ? ".png" : ".webp")}");
+                        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
                         
-                        using var mipmapFile = File.Create(Path.Combine(outputDir,
-                            $"{entry.Path.TrimStart('/')}._mipmap_{i+1}{(format == TextureFormat.Png ? ".png" : ".webp")}"));
+                        using var mipmapFile = File.Create(outputPath);
                         mipmapFile.Write(mipmapData, 0, mipmapSize);
                     }
                 }
@@ -141,10 +144,11 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 }
                 props.TryGetValue("stereo", out dynamic? stereo);
                 
-                var data = (MemoryStream) rawData;
+                var data = new MemoryStream((byte[])rawData);
                 var dataLength = (int) data.Length;
                 
-                var formatCode = (WavFormat) props["format"];
+                props.TryGetValue("format", out dynamic? format);
+                var formatCode = (WavFormat) (format ?? 0);
                 if(formatCode is WavFormat.QuiteOkAudio or WavFormat.IMA_AdPCM)
                     Console.WriteLine($"WARNING: '{entry.Path}' uses a WAV format ({formatCode}) that is not supported by this tool. The output file may not be playable.");
                 
@@ -177,14 +181,14 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
                 writer.Write("data"u8.ToArray());
                 writer.Write(dataLength);
                 
-                memStream.Write(data.ToArray(), 0, dataLength); // write the actual audio data
-                memStream.Seek(0, SeekOrigin.Begin); // rewind to the start so it can be saved
+                memStream.Seek(0, SeekOrigin.Begin);
                 
                 var outputPath = Path.Combine(outputDir, entry.Path.TrimStart('/'));
                 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 
                 using var outputFile = File.Create(outputPath);
                 memStream.CopyTo(outputFile);
+                data.CopyTo(outputFile);
 
                 return true;
             }
@@ -225,6 +229,8 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
     // https://github.com/godotengine/godot/blob/master/core/io/resource_format_binary.cpp#L982
     private SerializedObject? ParseResource(BinaryReader reader, Functions.FileIndex entry)
     {
+        bool usingUIDs = false; // set by flag
+        
         var magic = reader.ReadInt32();
         if (magic == Consts.MagicRscc)
             throw new Exception($"Compressed resources aren't not supported. Cannot convert '{entry.Path}'.");
@@ -241,7 +247,7 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
 
         var resourceType = Utils.Read32BitPrefixedString(reader);
         Console.WriteLine($"Resource type: {resourceType}, engine v{versionMajor}.{versionMinor} (resource v{resourceVersion})");
-        if (resourceVersion != 3) // we only support 3 (Godot 3.6)
+        if (resourceVersion != 3 && resourceVersion != 6) // we only support 3 (Godot 3.x) and 6 (Godot 4.x) for now
         {
             Console.WriteLine($"Resource version {resourceVersion} is not supported.");
             return null;
@@ -249,9 +255,24 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
 
         // skip:
         // - importmd_ofs (8 bytes)
-        // - reserved (14 x Int32)
-        reader.BaseStream.Seek(8 + 14 * 4, SeekOrigin.Current);
-        
+        reader.BaseStream.Seek(8, SeekOrigin.Current);
+        if (resourceVersion > 3)
+        {
+            var flags = reader.ReadInt32();
+            if ((flags & 2) != 0) // FLAG_HAS_UIDS
+                usingUIDs = true;
+
+            reader.BaseStream.Seek(8, SeekOrigin.Current); // - resource id (8 bytes)
+
+            if ((flags & 8) != 0) // FLAG_HAS_SCRIPT_CLASS
+                Utils.Read32BitPrefixedString(reader); // - script class name
+
+            // - reserved (11 x Int32)
+            reader.BaseStream.Seek(11 * 4, SeekOrigin.Current);
+        }
+        else
+            reader.BaseStream.Seek(14 * 4, SeekOrigin.Current); // - reserved (14 x Int32)
+
         var stringTableSize = reader.ReadInt32();
         var stringTable = new string[stringTableSize];
         for (var i = 0; i < stringTableSize; i++) {
@@ -262,14 +283,16 @@ public class Converter(BinaryReader reader, Functions.FileIndex entry, string ou
         for (var i = 0; i < externalResourceCount; i++) {
             Utils.Read32BitPrefixedString(reader); // type
             Utils.Read32BitPrefixedString(reader); // path
+            
+            if(usingUIDs)
+                reader.BaseStream.Seek(8, SeekOrigin.Current); // uid (8 bytes)
         }
         
         var internalResourceCount = reader.ReadInt32();
         var internalResourceOffsets = new long[internalResourceCount];
         for (var i = 0; i < internalResourceCount; i++) {
             Utils.Read32BitPrefixedString(reader); // path
-            internalResourceOffsets[i] = reader.ReadInt64();
-            // Console.WriteLine($"Internal resource '{path}' at {internalResourceOffsets[i]}");
+            internalResourceOffsets[i] = reader.ReadInt64(); // offset
         }
         
         if (internalResourceOffsets.Length < 1) {
